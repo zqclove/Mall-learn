@@ -912,7 +912,7 @@ jwt:
 </dependency>
 ```
 
-## 配置文件先关
+## 配置文件相关
 
 ​	修改Spring boot配置文件，在spring节点下添加data节点（spring data），再在data节点下添加Elasticsearch相关配置。
 
@@ -1177,7 +1177,182 @@ public class EsProductServiceImpl implements EsProductService {
 
 不贴出代码，可以根据service层编写出的简单逻辑。
 
+# 整合MongoDB实现文档操作
+
+> 本文主要讲解mall整合Mongodb的过程，以实现商品浏览记录在Mongodb中的添加、删除、查询为例。
+
+## 框架介绍
+
+### MongoDB
+
+> MongoDB 是一个基于分布式文件存储的数据库，是为快速开发互联网Web应用而构建的数据库系统，其数据模型和持久化策略就是为了构建高
+>
+> 读/写吞吐量和高自动灾备伸缩性的系统。
+
+#### 基本概念
+
+- **database：**数据库
+- **collection：**集合（相当于SQL的表）
+- **document：**文档（相当于SQL的记录行）
+- **field：**域（相当于SQL的数据字段）
+- **index：**索引
+- MongoDB不支持表连接
+- **primary key：**主键,MongoDB自动将_id字段设置为主键
+
+![img](https://www.runoob.com/wp-content/uploads/2013/10/Figure-1-Mapping-Table-to-Collection-1.png)
+
+关于更多MongoDB的知识会在Database-learn中学习到。
+
+### Spring Data Mongodb
+
+> 和Spring Data Elasticsearch类似，Spring Data Mongodb是Spring提供的一种以Spring Data风格来操作数据存储的方式，它可以避免编写大量的样板代码。
+
+**常用注解：**
+
+- **@Document：**标示映射到Mongodb文档上的领域对象
+- **@Id：**标示某个域为ID域
+- **@Indexed：**标示某个字段为Mongodb的索引字段
+
+可以使用 **@Query** 注解可以用Mongodb的 JSON 查询语句查询。
+
+```java
+@Query("{ 'memberId' : ?0 }")
+List<MemberReadHistory> findByMemberId(Long memberId);
+```
+
+## Maven依赖
+
+```xml
+<!---mongodb相关依赖-->
+<dependency>
+  <groupId>org.springframework.boot</groupId>
+  <artifactId>spring-boot-starter-data-mongodb</artifactId>
+</dependency>
+```
+
+## 配置文件相关
+
+修改application.yml文件。因为使用的是spring data，所以在spring：data节点下添加配置：
+
+```yaml
+mongodb:
+  host: localhost # mongodb的连接地址
+  port: 27017 # mongodb的连接端口号
+  database: mall-port # mongodb的连接的数据库
+```
+
+## 实现文档操作
+
+### 实体类
+
+**会员浏览记录文档对象 MemberReadHistory**：文档对象的ID域添加@Id注解，需要检索的字段添加@Indexed注解。
+
+```java
+/**
+ * 用户商品浏览历史记录
+ * Created by macro on 2018/8/3.
+ */
+@Document
+public class MemberReadHistory {
+    @Id
+    private String id;
+    @Indexed
+    private Long memberId;
+    private String memberNickname;
+    private String memberIcon;
+    @Indexed
+    private Long productId;
+    private String productName;
+    private String productPic;
+    private String productSubTitle;
+    private String productPrice;
+    private Date createTime;
+
+    //省略了所有getter和setter方法
+
+}
+
+```
+
+### Spring Data Repository
+
+需要继承 **MongoRepository**，spring data自实现基本的mongodb数据操作方法，也可以根据实体类的字段自定义查询方法，spring data根据方法名实现。
+
+```java
+/**
+ * 会员商品浏览历史Repository
+ * Created by macro on 2018/8/3.
+ */
+public interface MemberReadHistoryRepository extends 
+    MongoRepository<MemberReadHistory,String> {
+    /**
+     * 根据会员id按时间倒序获取浏览记录
+     * @param memberId 会员id
+     */
+    List<MemberReadHistory> findByMemberIdOrderByCreateTimeDesc(Long memberId);
+}
+```
+
+### Service
+
+省略service接口
+
+```java
+/**
+ * 会员浏览记录管理Service实现类
+ * Created by macro on 2018/8/3.
+ */
+@Service
+public class MemberReadHistoryServiceImpl implements MemberReadHistoryService {
+    @Autowired
+    private MemberReadHistoryRepository memberReadHistoryRepository;
+    
+    /**
+     * 生成浏览记录
+     */
+    @Override
+    public int create(MemberReadHistory memberReadHistory) {
+        memberReadHistory.setId(null);
+        memberReadHistory.setCreateTime(new Date());
+        memberReadHistoryRepository.save(memberReadHistory);
+        return 1;
+    }
+    
+    /**
+     * 批量删除浏览记录
+     */
+    @Override
+    public int delete(List<String> ids) {
+        List<MemberReadHistory> deleteList = new ArrayList<>();
+        for(String id:ids){
+            MemberReadHistory memberReadHistory = new MemberReadHistory();
+            memberReadHistory.setId(id);
+            deleteList.add(memberReadHistory);
+        }
+        memberReadHistoryRepository.deleteAll(deleteList);
+        return ids.size();
+    }
+
+    /**
+     * 获取用户浏览历史记录
+     */
+    @Override
+    public List<MemberReadHistory> list(Long memberId) {
+        return 
+           memberReadHistoryRepository.findByMemberIdOrderByCreateTimeDesc(memberId);
+    }
+}
+```
+
+### Controller
+
+不贴出代码，目前功能可根据service得出。
+
+
+
 # 参考资料
 
 [mall学习教程]: https://github.com/macrozheng/mall-learning
+
+[菜鸟教程]: https://www.runoob.com/mongodb/mongodb-databases-documents-collections.html
 
